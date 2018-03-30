@@ -6,12 +6,7 @@ import ctypes
 import ntpath
 
 class MemoryReader:
-    HealthAddress = -1
-    ScoreAddress = -1
-    PausedAddress = -1
-    GameOverAddress = -1
-
-    def __init__(self, **kwargs):
+    def __init__(self, window_title):
         OpenProcess = windll.kernel32.OpenProcess
         self.ReadProcessMemory = windll.kernel32.ReadProcessMemory
         SIZE_T = c_size_t
@@ -20,94 +15,49 @@ class MemoryReader:
         GetWindowThreadProcessId = windll.user32.GetWindowThreadProcessId
 
         PROCESS_ALL_ACCESS = 0x1F0FFF
-        HWND = win32ui.FindWindow(None,u"ARCADE GAME SERIES: PAC-MAN").GetSafeHwnd()
+        HWND = win32ui.FindWindow(None, window_title).GetSafeHwnd()
         PID = win32process.GetWindowThreadProcessId(HWND)[1]
         self.processHandle = ctypes.windll.kernel32.OpenProcess(PROCESS_ALL_ACCESS,False,PID)
 
         values = win32process.EnumProcessModules(self.processHandle)
         self.pointer_dict = dict()
+        self.address_dict = dict()
         for value in values:
             name = ntpath.basename(win32process.GetModuleFileNameEx(self.processHandle, value))
             self.pointer_dict[name] = value
 
-        PacManBaseAddress = self.pointer_dict["PAC-MAN.exe"]
-        MonoBaseAddress = self.pointer_dict["mono.dll"]
-        ReleaseBaseAddress = self.pointer_dict["Release_3.dll"]
-        TierBaseAddress = self.pointer_dict["tier0_s64.dll"]
 
-        #print(f"HWND: {HWND}")
-        #print(f"PID: {PID}")
-        #print(f"PROCESS: {self.processHandle}")
-        #print(f"PacManBaseAddress: {PacManBaseAddress}")
-        #print(f"MonoBaseAddress: {MonoBaseAddress}")
-        #print(f"ReleaseBaseAddress: {ReleaseBaseAddress}")
-
-        tmp = c_int()
-
-        healthPath = [0x3C440, 0x170, 0x8, 0x20, 0x0, 0x18]
-        print("Getting address of Lives")
-        self.HealthAddress = self.GetAddress(ReleaseBaseAddress, healthPath)
-
-        scorePath = [0x169FB8, 0x110, 0x0, 0x258]
-        print("Getting address of Score")
-        self.ScoreAddress = self.GetAddress(TierBaseAddress, scorePath)
-
-        pausedPath = [0x1125428, 0x8, 0x328, 0x130]
-        print("Getting address of Paused")
-        self.PausedAddress = self.GetAddress(PacManBaseAddress, pausedPath)
-
-        gameOverPath = [0x260110, 0x178, 0x5C]
-        print("Getting address of Game Over")
-        self.GameOverAddress = self.GetAddress(MonoBaseAddress, gameOverPath)
-
-        #print(self.HealthAddress)
-        #print(self.ScoreAddress)
-        #print(self.PausedAddress)
-        #print(self.GameOverAddress)
-
-
-    def GetAddress(self, basePointer, offsets):
+    def get_address(self, offsets):
         numRead = c_size_t()
+        base_pointer = self.pointer_dict[offsets[0]]
         tmp = c_int()
-        print(f"BasePointer: {basePointer}")
-        if not self.ReadProcessMemory(self.processHandle, basePointer + offsets[0], byref(tmp), 4, byref(numRead)):
-            raise RuntimeError(f"Failed to read a location in the memory. Address: {basePointer + offsets[0]}")
-        print(f"Tmp: {tmp.value}")
-        for i in range(1, offsets.__len__() - 1):
+        print(f"{base_pointer} + {offsets[1]} = {base_pointer + offsets[1]}")
+        if not self.ReadProcessMemory(self.processHandle, base_pointer + offsets[1], byref(tmp), 4, byref(numRead)):
+            raise RuntimeError(f"Failed to read a location in the memory. Address: {base_pointer + offsets[1]}")
+        for i in range(2, offsets.__len__() - 1):
+            print(f"{tmp.value} + {offsets[i]} = {tmp.value + offsets[i]}")
             if not self.ReadProcessMemory(self.processHandle, tmp.value + offsets[i], byref(tmp), 4, byref(numRead)):
                 raise RuntimeError(f"Failed to read a location in the memory. Address: {tmp.value + offsets[i]}")
-            print(f"Tmp: {tmp.value}")
 
         return tmp.value + offsets[offsets.__len__()-1]
 
-    def GetLives(self):
+    def read_address(self, path):
+        address = self.get_address(path)
         numRead = c_size_t()
         tmp = c_int()
-        if not self.ReadProcessMemory(self.processHandle, self.HealthAddress, byref(tmp), 4, byref(numRead)):
-            raise RuntimeError(f"Failed to read the health from memory. Address: {self.HealthAddress}")
+        if not self.ReadProcessMemory(self.processHandle, address, byref(tmp), 4, byref(numRead)):
+            raise RuntimeError(f"Failed to read the address from memory. Address: {address}")
 
         return tmp.value
 
-    def GetScore(self):
+    def store_address(self, key, path):
+        self.address_dict[key] = self.get_address(path)
+
+
+    def read(self, key):
         numRead = c_size_t()
         tmp = c_int()
-        if not self.ReadProcessMemory(self.processHandle, self.ScoreAddress, byref(tmp), 4, byref(numRead)):
-            raise RuntimeError(f"Failed to read the score from memory. Address: {self.ScoreAddress}")
-
-        return tmp.value
-
-    def GetPaused(self):
-        numRead = c_size_t()
-        tmp = c_int()
-        if not self.ReadProcessMemory(self.processHandle, self.PausedAddress, byref(tmp), 4, byref(numRead)):
-            raise RuntimeError(f"Failed to read pause status from memory. Address: {self.PausedAddress}")
-
-        return tmp.value
-        
-    def GetGameOver(self):
-        numRead = c_size_t()
-        tmp = c_int()
-        if not self.ReadProcessMemory(self.processHandle, self.GameOverAddress, byref(tmp), 4, byref(numRead)):
-            raise RuntimeError(f"Failed to read the game status from memory. Address: {self.GameOverAddress}")
+        if not self.ReadProcessMemory(self.processHandle, self.address_dict[key], byref(tmp), 4, byref(numRead)):
+            raise RuntimeError(f"Failed to read the {key} address from memory. Address: {self.address_dict[key]}")
 
         return tmp.value

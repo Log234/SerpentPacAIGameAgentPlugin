@@ -37,7 +37,7 @@ class SerpentPacAIGameAgent(GameAgent):
         }
 
         self.ppo_agent = SerpentPPO(
-            frame_shape=(112, 125, 4),
+            frame_shape=(125, 112, 4),
             game_inputs=game_inputs
         )
 
@@ -145,6 +145,7 @@ class SerpentPacAIGameAgent(GameAgent):
             # Give ourselves 30 seconds to work with
             if time.time() - self.paused_at >= 30:
                 self.input_controller.tap_key(KeyboardKey.KEY_ESCAPE)
+                time.sleep(1)
                 return
 
             self.printer.add("The game is paused.")
@@ -291,8 +292,25 @@ class SerpentPacAIGameAgent(GameAgent):
             self.episode_started_at = time.time()
             self.episode_observation_count = 0
 
-
     def reward_agent(self):
+        if self.game_data.IsOver() or self.lives[0] < self.lives[1]:
+            return 0
+        
+        if (self.score[0] > self.score[1]):
+            if self.best_score is not 0:
+                reward = self.score[0] / self.best_score
+            else:
+                reward = self.score[0] / 700
+            if reward > 1:
+                reward = 1
+
+        else:
+            reward = 0
+
+
+        return reward
+
+    def reward_agent_backup(self):
         if self.game_data.IsOver():
             return 0
         
@@ -370,5 +388,7 @@ class SerpentPacAIGameAgent(GameAgent):
                 self.game.screen_regions["GAME_REGION"]
             )
 
-            game_area_buffer.append(FrameTransformer.resize(game_area, "125x112"))
+            frame = FrameTransformer.rescale(game_area, 0.25)
+            game_area_buffer.append(frame)
+
         return game_area_buffer
